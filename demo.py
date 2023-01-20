@@ -193,13 +193,12 @@ if __name__ == "__main__":
 
     imageio.mimsave(opt.result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
     if opt.save_as_frames:
+        frame_dir = os.path.join(
+            result_dir,
+            os.path.splitext(os.path.basename(opt.result_video))[0] + '-frames'
+        )
+        os.makedirs(frame_dir, exist_ok=True)
+
         for i, im in tqdm(enumerate([img_as_ubyte(frame) for frame in predictions])):
-            imageio.imsave(
-                uri=os.path.join(
-                    result_dir,
-                    os.path.splitext(os.path.basename(opt.result_video))[0] + '-frames',
-                    f"{str(i).zfill(3)}.png"
-                ),
-                im=im
-            )
+            imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
 
