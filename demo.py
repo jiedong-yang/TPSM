@@ -193,7 +193,7 @@ if __name__ == "__main__":
 
     imageio.mimsave(opt.result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
     if opt.save_as_frames:
-        for i, im in enumerate([img_as_ubyte(frame) for frame in predictions]):
+        for i, im in tqdm(enumerate([img_as_ubyte(frame) for frame in predictions])):
             imageio.imsave(
                 uri=os.path.join(
                     result_dir,
