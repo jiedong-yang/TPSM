@@ -208,6 +208,7 @@ def inference_func(args):
         images = sorted(os.listdir(args.image_dir))
         # init result directory
         result_dir = args.result_dir if args.result_dir else './results'
+        os.makedirs(result_dir, exist_ok=True)
 
         for image in images:
             # get driving video filename
