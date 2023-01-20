@@ -1,5 +1,6 @@
 import matplotlib
 matplotlib.use('Agg')
+import os
 import sys
 import yaml
 from argparse import ArgumentParser
@@ -18,6 +19,7 @@ from modules.avd_network import AVDNetwork
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.9")
 
+
 def relative_kp(kp_source, kp_driving, kp_driving_initial):
 
     source_area = ConvexHull(kp_source['fg_kp'][0].data.cpu().numpy()).volume
@@ -31,6 +33,7 @@ def relative_kp(kp_source, kp_driving, kp_driving_initial):
     kp_new['fg_kp'] = kp_value_diff + kp_source['fg_kp']
 
     return kp_new
+
 
 def load_checkpoints(config_path, checkpoint_path, device):
     with open(config_path) as f:
@@ -125,7 +128,7 @@ def find_best_frame(source, driving, cpu):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--config", required=True, help="path to config")
+    parser.add_argument("--config", default='config/vox-256.yaml', help="path to config")
     parser.add_argument("--checkpoint", default='checkpoints/vox.pth.tar', help="path to checkpoint to restore")
 
     parser.add_argument("--source_image", default='./assets/source.png', help="path to source image")
@@ -174,6 +177,9 @@ if __name__ == "__main__":
         predictions = predictions_backward[::-1] + predictions_forward[1:]
     else:
         predictions = make_animation(source_image, driving_video, inpainting, kp_detector, dense_motion_network, avd_network, device = device, mode = opt.mode)
-    
+
+    result_dir = os.path.dirname(opt.result_video)
+    os.makedirs(result_dir, exist_ok=True)
+
     imageio.mimsave(opt.result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
 
