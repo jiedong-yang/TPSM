@@ -210,7 +210,7 @@ def inference_func(args):
         result_dir = args.result_dir if args.result_dir else './results'
         os.makedirs(result_dir, exist_ok=True)
 
-        for image in images:
+        for image in tqdm(images):
             # get driving video filename
             driving_vid_name = os.path.splitext(os.path.basename(args.driving_video))[0]
             # get image filename
@@ -225,7 +225,7 @@ def inference_func(args):
                 source_image=os.path.join(args.image_dir, image),
                 driving_video=args.driving_video,
                 result_video=os.path.join(result_dir, result_vid_name),
-                img_shape=args.image_shape,
+                img_shape=args.img_shape,
                 mode=args.mode,
                 is_find_best_frame=args.find_best_frame,
                 cpu=args.cpu,
@@ -239,7 +239,7 @@ def inference_func(args):
             source_image=args.source_image,
             driving_video=args.driving_video,
             result_video=args.result_video,
-            img_shape=args.image_shape,
+            img_shape=args.img_shape,
             mode=args.mode,
             is_find_best_frame=args.find_best_frame,
             cpu=args.cpu,
