@@ -126,14 +126,137 @@ def find_best_frame(source, driving, cpu):
     return frame_num
 
 
+def inference(
+        config,
+        checkpoint,
+        source_image,
+        driving_video,
+        result_video,
+        img_shape,
+        mode,
+        is_find_best_frame=False,
+        cpu=False,
+        save_as_frames=False
+):
+    """ inference on single image
+
+    :param config:
+    :param checkpoint:
+    :param source_image:
+    :param driving_video:
+    :param result_video:
+    :param img_shape:
+    :param mode:
+    :param is_find_best_frame:
+    :param cpu:
+    :param save_as_frames:
+    :return:
+    """
+    source_image = imageio.imread(source_image)
+    reader = imageio.get_reader(driving_video)
+    fps = reader.get_meta_data()['fps']
+    driving_video = []
+    try:
+        for im in reader:
+            driving_video.append(im)
+    except RuntimeError:
+        pass
+    reader.close()
+
+    if cpu:
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda')
+
+    source_image = resize(source_image, img_shape)[..., :3]
+    driving_video = [resize(frame, img_shape)[..., :3] for frame in driving_video]
+    inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
+        config_path=config, checkpoint_path=checkpoint, device=device
+    )
+
+    if is_find_best_frame:
+        i = find_best_frame(source_image, driving_video, cpu)
+        print("Best frame: " + str(i))
+        driving_forward = driving_video[i:]
+        driving_backward = driving_video[:(i + 1)][::-1]
+        predictions_forward = make_animation(source_image, driving_forward, inpainting, kp_detector,
+                                             dense_motion_network, avd_network, device=device, mode=mode)
+        predictions_backward = make_animation(source_image, driving_backward, inpainting, kp_detector,
+                                              dense_motion_network, avd_network, device=device, mode=mode)
+        predictions = predictions_backward[::-1] + predictions_forward[1:]
+    else:
+        predictions = make_animation(source_image, driving_video, inpainting, kp_detector,
+                                     dense_motion_network, avd_network, device=device, mode=mode)
+
+    result_dir = os.path.dirname(result_video)
+    os.makedirs(result_dir, exist_ok=True)
+
+    imageio.mimsave(result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
+    if save_as_frames:
+        frame_dir = os.path.join(
+            result_dir,
+            os.path.splitext(os.path.basename(result_video))[0] + '-frames'
+        )
+        os.makedirs(frame_dir, exist_ok=True)
+
+        for i, im in tqdm(enumerate([img_as_ubyte(frame) for frame in predictions])):
+            imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
+
+
+def inference_func(args):
+    if args.image_dir and os.path.isdir(args.image_dir):
+        images = sorted(os.listdir(args.image_dir))
+        # init result directory
+        result_dir = args.result_dir if args.result_dir else './results'
+
+        for image in images:
+            # get driving video filename
+            driving_vid_name = os.path.splitext(os.path.basename(args.driving_video))[0]
+            # get image filename
+            image_name = os.path.splitext(image)[0]
+            # init result video's name for each image
+            result_vid_name = '-'.join([image_name, driving_vid_name, args.mode]) + ".mp4"
+
+            # inference
+            inference(
+                config=args.config,
+                checkpoint=args.checkpoint,
+                source_image=os.path.join(args.image_dir, image),
+                driving_video=args.driving_video,
+                result_video=os.path.join(result_dir, result_vid_name),
+                img_shape=args.image_shape,
+                mode=args.mode,
+                is_find_best_frame=args.find_best_frame,
+                cpu=args.cpu,
+                save_as_frames=args.save_as_frames
+            )
+    else:
+        # single source image inference
+        inference(
+            config=args.config,
+            checkpoint=args.checkpoint,
+            source_image=args.source_image,
+            driving_video=args.driving_video,
+            result_video=args.result_video,
+            img_shape=args.image_shape,
+            mode=args.mode,
+            is_find_best_frame=args.find_best_frame,
+            cpu=args.cpu,
+            save_as_frames=args.save_as_frames
+        )
+
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--config", default='config/vox-256.yaml', help="path to config")
     parser.add_argument("--checkpoint", default='checkpoints/vox.pth.tar', help="path to checkpoint to restore")
 
-    parser.add_argument("--source_image", default='./assets/source.png', help="path to source image")
+    parser.add_argument("--source_image", default='./assets/source.png', nargs='+', help="path to source image/images")
     parser.add_argument("--driving_video", default='./assets/driving.mp4', help="path to driving video")
     parser.add_argument("--result_video", default='./result.mp4', help="path to output")
+    parser.add_argument("--image_dir", help="directory contains multiple source images")
+    parser.add_argument("-rd", "--result_dir",
+                        help="default output directory if doing multiple images inference")
     
     parser.add_argument("--img_shape", default="256,256", type=lambda x: list(map(int, x.split(','))),
                         help='Shape of image, that the model was trained on.')
@@ -152,53 +275,6 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
 
-    source_image = imageio.imread(opt.source_image)
-    reader = imageio.get_reader(opt.driving_video)
-    fps = reader.get_meta_data()['fps']
-    driving_video = []
-    try:
-        for im in reader:
-            driving_video.append(im)
-    except RuntimeError:
-        pass
-    reader.close()
-    
-    if opt.cpu:
-        device = torch.device('cpu')
-    else:
-        device = torch.device('cuda')
-    
-    source_image = resize(source_image, opt.img_shape)[..., :3]
-    driving_video = [resize(frame, opt.img_shape)[..., :3] for frame in driving_video]
-    inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
-        config_path=opt.config, checkpoint_path=opt.checkpoint, device=device
-    )
- 
-    if opt.find_best_frame:
-        i = find_best_frame(source_image, driving_video, opt.cpu)
-        print ("Best frame: " + str(i))
-        driving_forward = driving_video[i:]
-        driving_backward = driving_video[:(i+1)][::-1]
-        predictions_forward = make_animation(source_image, driving_forward, inpainting, kp_detector,
-                                             dense_motion_network, avd_network, device=device, mode=opt.mode)
-        predictions_backward = make_animation(source_image, driving_backward, inpainting, kp_detector,
-                                              dense_motion_network, avd_network, device=device, mode=opt.mode)
-        predictions = predictions_backward[::-1] + predictions_forward[1:]
-    else:
-        predictions = make_animation(source_image, driving_video, inpainting, kp_detector,
-                                     dense_motion_network, avd_network, device=device, mode=opt.mode)
+    inference_func(opt)
 
-    result_dir = os.path.dirname(opt.result_video)
-    os.makedirs(result_dir, exist_ok=True)
-
-    imageio.mimsave(opt.result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
-    if opt.save_as_frames:
-        frame_dir = os.path.join(
-            result_dir,
-            os.path.splitext(os.path.basename(opt.result_video))[0] + '-frames'
-        )
-        os.makedirs(frame_dir, exist_ok=True)
-
-        for i, im in tqdm(enumerate([img_as_ubyte(frame) for frame in predictions])):
-            imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
 
