@@ -128,15 +128,30 @@ def find_best_frame(source, driving, cpu):
     return frame_num
 
 
+def load_video(video, img_shape):
+    reader = imageio.get_reader(video)
+    fps = reader.get_meta_data()['fps']
+    video = []
+    try:
+        for im in reader:
+            video.append(im)
+    except RuntimeError:
+        pass
+    reader.close()
+
+    return [resize(frame, img_shape)[..., :3] for frame in video], fps
+
+
 def inference(
         inpainting,
         kp_detector,
         dense_motion_network,
         avd_network,
-        source_image,
-        driving_video,
+        source_image: str,
+        driving_video: List[np.ndarray],
         result_video,
         img_shape,
+        fps,
         mode,
         is_find_best_frame=False,
         cpu=False,
@@ -153,6 +168,7 @@ def inference(
     :param driving_video:
     :param result_video:
     :param img_shape:
+    :param fps:
     :param mode:
     :param is_find_best_frame:
     :param cpu:
@@ -161,15 +177,15 @@ def inference(
     :return:
     """
     source_image = imageio.imread(source_image)
-    reader = imageio.get_reader(driving_video)
-    fps = reader.get_meta_data()['fps']
-    driving_video = []
-    try:
-        for im in reader:
-            driving_video.append(im)
-    except RuntimeError:
-        pass
-    reader.close()
+    # reader = imageio.get_reader(driving_video)
+    # fps = reader.get_meta_data()['fps']
+    # driving_video = []
+    # try:
+    #     for im in reader:
+    #         driving_video.append(im)
+    # except RuntimeError:
+    #     pass
+    # reader.close()
 
     if cpu:
         device = torch.device('cpu')
@@ -177,7 +193,7 @@ def inference(
         device = torch.device('cuda')
 
     source_image = resize(source_image, img_shape)[..., :3]
-    driving_video = [resize(frame, img_shape)[..., :3] for frame in driving_video]
+    # driving_video = [resize(frame, img_shape)[..., :3] for frame in driving_video]
     # inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
     #     config_path=config, checkpoint_path=checkpoint, device=device
     # )
@@ -225,6 +241,9 @@ def inference_func(args):
         device=torch.device('cpu') if args.cpu else torch.device('cuda')
     )
 
+    # load driving video
+    driving_video, fps = load_video(args.driving_video, img_shape=args.img_shape)
+
     if args.image_dir and os.path.isdir(args.image_dir):
         images = sorted(os.listdir(args.image_dir))
         # init result directory
@@ -249,6 +268,7 @@ def inference_func(args):
                 driving_video=args.driving_video,
                 result_video=os.path.join(result_dir, result_vid_name),
                 img_shape=args.img_shape,
+                fps=fps,
                 mode=args.mode,
                 is_find_best_frame=args.find_best_frame,
                 cpu=args.cpu,
@@ -266,6 +286,7 @@ def inference_func(args):
             driving_video=args.driving_video,
             result_video=args.result_video,
             img_shape=args.img_shape,
+            fps=fps,
             mode=args.mode,
             is_find_best_frame=args.find_best_frame,
             cpu=args.cpu,
