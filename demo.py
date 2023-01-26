@@ -207,7 +207,14 @@ def inference(
         )
         os.makedirs(frame_dir, exist_ok=True)
 
-        for i, im in tqdm(enumerate([img_as_ubyte(frame) for frame in predictions])):
+        frames = [img_as_ubyte(frame) for frame in predictions]
+
+        if selected_frames:
+            for idx in selected_frames:
+                imageio.imsave(os.path.join(frame_dir, f"{str(idx).zfill(3)}.png"), frames[idx])
+            return
+
+        for i, im in tqdm(enumerate(frames)):
             imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
 
 
@@ -293,7 +300,7 @@ if __name__ == "__main__":
     parser.add_argument("--cpu", dest="cpu", action="store_true", help="cpu mode.")
 
     parser.add_argument("-saf", "--save_as_frames", action="store_true", help="same frames instead of video")
-    parser.add_argument("-sf", "--select_frames", nargs='+', type=lambda x: list(map(int, x)),
+    parser.add_argument("-sf", "--selected_frames", nargs='+', type=lambda x: list(map(int, x)),
                         help="a list of frame index of the frames to save as image")
 
     opt = parser.parse_args()
