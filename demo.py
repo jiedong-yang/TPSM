@@ -16,6 +16,8 @@ from modules.keypoint_detector import KPDetector
 from modules.dense_motion import DenseMotionNetwork
 from modules.avd_network import AVDNetwork
 
+from typing import List
+
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.9")
 
@@ -121,14 +123,16 @@ def find_best_frame(source, driving, cpu):
             if new_norm < norm:
                 norm = new_norm
                 frame_num = i
-        except:
+        except TypeError:
             pass
     return frame_num
 
 
 def inference(
-        config,
-        checkpoint,
+        inpainting,
+        kp_detector,
+        dense_motion_network,
+        avd_network,
         source_image,
         driving_video,
         result_video,
@@ -136,12 +140,15 @@ def inference(
         mode,
         is_find_best_frame=False,
         cpu=False,
-        save_as_frames=False
+        save_as_frames=False,
+        selected_frames: List[int] = None
 ):
     """ inference on single image
 
-    :param config:
-    :param checkpoint:
+    :param inpainting:
+    :param kp_detector:
+    :param dense_motion_network:
+    :param avd_network:
     :param source_image:
     :param driving_video:
     :param result_video:
@@ -150,6 +157,7 @@ def inference(
     :param is_find_best_frame:
     :param cpu:
     :param save_as_frames:
+    :param selected_frames:
     :return:
     """
     source_image = imageio.imread(source_image)
@@ -170,9 +178,9 @@ def inference(
 
     source_image = resize(source_image, img_shape)[..., :3]
     driving_video = [resize(frame, img_shape)[..., :3] for frame in driving_video]
-    inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
-        config_path=config, checkpoint_path=checkpoint, device=device
-    )
+    # inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
+    #     config_path=config, checkpoint_path=checkpoint, device=device
+    # )
 
     if is_find_best_frame:
         i = find_best_frame(source_image, driving_video, cpu)
@@ -204,6 +212,12 @@ def inference(
 
 
 def inference_func(args):
+    # load computation module
+    inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
+        config_path=args.config, checkpoint_path=args.checkpoint,
+        device=torch.device('cpu') if args.cpu else torch.device('cuda')
+    )
+
     if args.image_dir and os.path.isdir(args.image_dir):
         images = sorted(os.listdir(args.image_dir))
         # init result directory
@@ -220,8 +234,10 @@ def inference_func(args):
 
             # inference
             inference(
-                config=args.config,
-                checkpoint=args.checkpoint,
+                inpainting=inpainting,
+                kp_detector=kp_detector,
+                dense_motion_network=dense_motion_network,
+                avd_network=avd_network,
                 source_image=os.path.join(args.image_dir, image),
                 driving_video=args.driving_video,
                 result_video=os.path.join(result_dir, result_vid_name),
@@ -229,13 +245,16 @@ def inference_func(args):
                 mode=args.mode,
                 is_find_best_frame=args.find_best_frame,
                 cpu=args.cpu,
-                save_as_frames=args.save_as_frames
+                save_as_frames=args.save_as_frames,
+                selected_frames=args.selected_frames
             )
     else:
         # single source image inference
         inference(
-            config=args.config,
-            checkpoint=args.checkpoint,
+            inpainting=inpainting,
+            kp_detector=kp_detector,
+            dense_motion_network=dense_motion_network,
+            avd_network=avd_network,
             source_image=args.source_image,
             driving_video=args.driving_video,
             result_video=args.result_video,
@@ -243,7 +262,8 @@ def inference_func(args):
             mode=args.mode,
             is_find_best_frame=args.find_best_frame,
             cpu=args.cpu,
-            save_as_frames=args.save_as_frames
+            save_as_frames=args.save_as_frames,
+            selected_frames=args.selected_frames
         )
 
 
@@ -273,6 +293,8 @@ if __name__ == "__main__":
     parser.add_argument("--cpu", dest="cpu", action="store_true", help="cpu mode.")
 
     parser.add_argument("-saf", "--save_as_frames", action="store_true", help="same frames instead of video")
+    parser.add_argument("-sf", "--select_frames", nargs='+', type=lambda x: list(map(int, x)),
+                        help="a list of frame index of the frames to save as image")
 
     opt = parser.parse_args()
 
