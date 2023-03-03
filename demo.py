@@ -17,6 +17,12 @@ from modules.dense_motion import DenseMotionNetwork
 from modules.avd_network import AVDNetwork
 
 from typing import List
+from functions import crop, replace, get_fa_kps
+import face_alignment
+
+import gc
+
+gc.enable()
 
 if sys.version_info[0] < 3:
     raise Exception("You must use Python 3 or higher. Recommended version is Python 3.9")
@@ -156,7 +162,9 @@ def inference(
         is_find_best_frame=False,
         cpu=False,
         save_as_frames=False,
-        selected_frames: List[int] = None
+        selected_frames: List[int] = None,
+        crop_replace=False,
+        crop_size=256
 ):
     """ inference on single image
 
@@ -176,7 +184,12 @@ def inference(
     :param selected_frames:
     :return:
     """
-    source_image = imageio.imread(source_image)
+    if cpu:
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda')
+
+    original_image = imageio.imread(source_image)
     # reader = imageio.get_reader(driving_video)
     # fps = reader.get_meta_data()['fps']
     # driving_video = []
@@ -186,13 +199,19 @@ def inference(
     # except RuntimeError:
     #     pass
     # reader.close()
+    # crop_size = 256
+    if crop_replace:
+        fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=True, device="cuda")
+        fa_id = [27, 30, 57, 8, 0, 16]
+        fa_kps = get_fa_kps(original_image, fa)[fa_id, :]
 
-    if cpu:
-        device = torch.device('cpu')
+        # crop
+        # x, y = int((fa_kps[4, 0]+fa_kps[5, 0])/2), int((fa_kps[0,1]+fa_kps[3,1])/2)
+        x, y = int(fa_kps[0, 0]), int(fa_kps[0, 1])
+        # TODO: update the off_x, off_y parameters to automatic configurations
+        source_image, bottom_left = crop(original_image, (x, y), off_x=crop_size//2, off_y=crop_size//2, size=crop_size)
     else:
-        device = torch.device('cuda')
-
-    source_image = resize(source_image, img_shape)[..., :3]
+        source_image = resize(original_image, img_shape)[..., :3]
     # driving_video = [resize(frame, img_shape)[..., :3] for frame in driving_video]
     # inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
     #     config_path=config, checkpoint_path=checkpoint, device=device
@@ -214,16 +233,18 @@ def inference(
 
     result_dir = os.path.dirname(result_video)
     os.makedirs(result_dir, exist_ok=True)
+    frames = [img_as_ubyte(frame) for frame in predictions]
 
-    imageio.mimsave(result_video, [img_as_ubyte(frame) for frame in predictions], fps=fps)
+    if crop_replace:
+        frames = [replace(original_image, repl_img=frame, bl_point=bottom_left, size=crop_size) for frame in frames]
+
+    imageio.mimsave(result_video, frames, fps=fps)
     if save_as_frames:
         frame_dir = os.path.join(
             result_dir,
             os.path.splitext(os.path.basename(result_video))[0] + '-frames'
         )
         os.makedirs(frame_dir, exist_ok=True)
-
-        frames = [img_as_ubyte(frame) for frame in predictions]
 
         if selected_frames:
             for idx in selected_frames:
@@ -232,6 +253,10 @@ def inference(
 
         for i, im in tqdm(enumerate(frames)):
             imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
+
+    del predictions
+
+    gc.collect()
 
 
 def inference_func(args):
@@ -324,7 +349,12 @@ if __name__ == "__main__":
     parser.add_argument("-sf", "--selected_frames", nargs='+', type=lambda x: list(map(int, x)),
                         help="a list of frame index of the frames to save as image")
 
+    parser.add_argument('-cr', "--crop_replace", action="store_true", help="crop and replace method")
+    parser.add_argument('-cs', "--crop_size", default=256, type=int, help="size of cropped out image")
+
     opt = parser.parse_args()
+
+    torch.cuda.empty_cache()
 
     inference_func(opt)
 
