@@ -2,6 +2,9 @@ import os
 import cv2
 import numpy as np
 
+import imageio.v2 as iio
+# from tqdm import tqdm
+
 
 def crop_face(image: np.ndarray, center, off_x=128, off_y=128, size=256):
     def adjust_coord(n, max_n):
@@ -50,3 +53,14 @@ def get_fa_kps(img, fa):
     if kps is None:
         return None
     return kps[0]
+
+
+def save_image(image, path):
+    iio.imsave(path, image)
+
+
+def save_images(images, path_list: list):
+    # chunksize = round(len(path_list) / n_workers)
+    assert len(images)==len(path_list), "images and paths length not matched!"
+    for image, path in zip(images, path_list):
+        iio.imsave(path, image)

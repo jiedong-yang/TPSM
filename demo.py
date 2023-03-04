@@ -18,10 +18,12 @@ from modules.dense_motion import DenseMotionNetwork
 from modules.avd_network import AVDNetwork
 
 from typing import List
-from functions import crop_face, replace, get_fa_kps
+from functions import crop_face, replace, get_fa_kps, save_images
 import face_alignment
 
 import gc
+
+from concurrent.futures import ProcessPoolExecutor
 
 gc.enable()
 
@@ -165,7 +167,8 @@ def inference(
         save_as_frames=False,
         selected_frames: List[int] = None,
         crop_replace=False,
-        crop_size=256
+        crop_size=256,
+        n_workers=8
 ):
     """ inference on single image
 
@@ -183,6 +186,9 @@ def inference(
     :param cpu:
     :param save_as_frames:
     :param selected_frames:
+    :param crop_replace:
+    :param crop_size:
+    :param n_workers:
     :return:
     """
     if cpu:
@@ -246,8 +252,15 @@ def inference(
                 imageio.imsave(os.path.join(frame_dir, f"{str(idx).zfill(3)}.png"), frames[idx])
             return
 
-        for i, im in tqdm(enumerate(frames)):
-            imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
+        # for i, im in tqdm(enumerate(frames)):
+        #     imageio.imsave(os.path.join(frame_dir, f"{str(i).zfill(3)}.png"), im)
+        filepath_list = [os.path.join(frame_dir, f"{str(i).zfill(3)}.png") for i in range(len(frames))]
+        # n_workers = 8
+        chunksize = round(len(filepath_list) / n_workers)
+        with ProcessPoolExecutor(n_workers) as exe:
+            for i in tqdm(range(0, len(filepath_list), chunksize)):
+                # fp_list = filepath_list[i: (i+chunksize)]
+                _ = exe.submit(save_images, frames[i: i+chunksize], filepath_list[i: (i+chunksize)])
 
     del predictions
 
@@ -295,7 +308,8 @@ def inference_func(args):
                 save_as_frames=args.save_as_frames,
                 selected_frames=args.selected_frames,
                 crop_replace=args.crop_replace,
-                crop_size=args.crop_size
+                crop_size=args.crop_size,
+                n_workers=args.n_workers,
             )
     else:
         # single source image inference
@@ -315,7 +329,8 @@ def inference_func(args):
             save_as_frames=args.save_as_frames,
             selected_frames=args.selected_frames,
             crop_replace=args.crop_replace,
-            crop_size=args.crop_size
+            crop_size=args.crop_size,
+            n_workers=args.n_workers,
         )
 
 
@@ -350,6 +365,7 @@ if __name__ == "__main__":
 
     parser.add_argument('-cr', "--crop_replace", action="store_true", help="crop and replace method")
     parser.add_argument('-cs', "--crop_size", default=256, type=int, help="size of cropped out image")
+    parser.add_argument('-nw', "--n_workers", default=8, type=int, help="number of processes for save images")
 
     opt = parser.parse_args()
 
