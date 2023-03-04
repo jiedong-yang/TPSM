@@ -7,7 +7,8 @@ from argparse import ArgumentParser
 from tqdm import tqdm
 from scipy.spatial import ConvexHull
 import numpy as np
-import imageio
+# import imageio
+import imageio.v2 as imageio
 from skimage.transform import resize
 from skimage import img_as_ubyte
 import torch
@@ -17,7 +18,7 @@ from modules.dense_motion import DenseMotionNetwork
 from modules.avd_network import AVDNetwork
 
 from typing import List
-from functions import crop, replace, get_fa_kps
+from functions import crop_face, replace, get_fa_kps
 import face_alignment
 
 import gc
@@ -189,33 +190,28 @@ def inference(
     else:
         device = torch.device('cuda')
 
+    result_dir = os.path.dirname(result_video)
+    os.makedirs(result_dir, exist_ok=True)
+
     original_image = imageio.imread(source_image)
-    # reader = imageio.get_reader(driving_video)
-    # fps = reader.get_meta_data()['fps']
-    # driving_video = []
-    # try:
-    #     for im in reader:
-    #         driving_video.append(im)
-    # except RuntimeError:
-    #     pass
-    # reader.close()
-    # crop_size = 256
+
     if crop_replace:
+        print("cropping images based on facial key points")
         fa = face_alignment.FaceAlignment(face_alignment.LandmarksType._2D, flip_input=True, device="cuda")
         fa_id = [27, 30, 57, 8, 0, 16]
         fa_kps = get_fa_kps(original_image, fa)[fa_id, :]
 
         # crop
-        # x, y = int((fa_kps[4, 0]+fa_kps[5, 0])/2), int((fa_kps[0,1]+fa_kps[3,1])/2)
-        x, y = int(fa_kps[0, 0]), int(fa_kps[0, 1])
+        x, y = int((fa_kps[4, 0]+fa_kps[5, 0])/2), int((fa_kps[0,1]+fa_kps[1,1])/2)
+        # x, y = int(fa_kps[1, 0]), int(fa_kps[1, 1])
         # TODO: update the off_x, off_y parameters to automatic configurations
-        source_image, bottom_left = crop(original_image, (x, y), off_x=crop_size//2, off_y=crop_size//2, size=crop_size)
+        crop_image_name = f"{os.path.splitext(os.path.basename(source_image))[0]}_cropped_({x}-{y}).png"
+        source_image, top_left = crop_face(original_image, (x, y),
+                                           off_x=crop_size//2, off_y=crop_size//2, size=crop_size)
+        imageio.imsave(os.path.join(result_dir, crop_image_name), source_image)
+        source_image = resize(source_image, img_shape)[..., :3]
     else:
         source_image = resize(original_image, img_shape)[..., :3]
-    # driving_video = [resize(frame, img_shape)[..., :3] for frame in driving_video]
-    # inpainting, kp_detector, dense_motion_network, avd_network = load_checkpoints(
-    #     config_path=config, checkpoint_path=checkpoint, device=device
-    # )
 
     if is_find_best_frame:
         i = find_best_frame(source_image, driving_video, cpu)
@@ -231,18 +227,17 @@ def inference(
         predictions = make_animation(source_image, driving_video, inpainting, kp_detector,
                                      dense_motion_network, avd_network, device=device, mode=mode)
 
-    result_dir = os.path.dirname(result_video)
-    os.makedirs(result_dir, exist_ok=True)
     frames = [img_as_ubyte(frame) for frame in predictions]
 
     if crop_replace:
-        frames = [replace(original_image, repl_img=frame, bl_point=bottom_left, size=crop_size) for frame in frames]
+        frames = [replace(original_image, repl_img=frame, top_left_point=top_left, size=crop_size) for frame in frames]
 
     imageio.mimsave(result_video, frames, fps=fps)
     if save_as_frames:
+        postfix = '-frames' if not crop_replace else '-cr-frames'
         frame_dir = os.path.join(
             result_dir,
-            os.path.splitext(os.path.basename(result_video))[0] + '-frames'
+            os.path.splitext(os.path.basename(result_video))[0] + postfix
         )
         os.makedirs(frame_dir, exist_ok=True)
 
@@ -298,7 +293,9 @@ def inference_func(args):
                 is_find_best_frame=args.find_best_frame,
                 cpu=args.cpu,
                 save_as_frames=args.save_as_frames,
-                selected_frames=args.selected_frames
+                selected_frames=args.selected_frames,
+                crop_replace=args.crop_replace,
+                crop_size=args.crop_size
             )
     else:
         # single source image inference
@@ -316,7 +313,9 @@ def inference_func(args):
             is_find_best_frame=args.find_best_frame,
             cpu=args.cpu,
             save_as_frames=args.save_as_frames,
-            selected_frames=args.selected_frames
+            selected_frames=args.selected_frames,
+            crop_replace=args.crop_replace,
+            crop_size=args.crop_size
         )
 
 

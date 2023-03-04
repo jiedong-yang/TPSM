@@ -3,16 +3,16 @@ import cv2
 import numpy as np
 
 
-def crop(image: np.ndarray, center, off_x=128, off_y=128, size=256):
+def crop_face(image: np.ndarray, center, off_x=128, off_y=128, size=256):
     def adjust_coord(n, max_n):
         return min(max(n, 0), max_n)
-
+    print(image.shape)
     img_size = image.shape[0]
     x, y = center
     print(x, y)
-    top_left = (adjust_coord(x-off_x), adjust_coord(y-off_y)) #
+    top_left = (adjust_coord(x-off_x, max_n=img_size), adjust_coord(y-off_y, max_n=img_size))  #
     print(f"top_left: {top_left}")
-    return image[top_left[1]: top_left[1]+size, top_left[0]: top_left[0]+size, :3], top_left
+    return image[top_left[1]: top_left[1]+size, top_left[0]: top_left[0]+size, :], top_left
 
 
 def replace(image: np.ndarray, repl_img: np.ndarray, top_left_point: tuple, size=256):
@@ -25,7 +25,7 @@ def replace(image: np.ndarray, repl_img: np.ndarray, top_left_point: tuple, size
     :return:
     """
     new_image = image.copy() # deep copy
-    new_image[top_left_point[1]: top_left_point[1]+size, top_left_point[0]: top_left_point[0]+size, :] = repl_img
+    new_image[top_left_point[1]: top_left_point[1]+size, top_left_point[0]: top_left_point[0]+size, :3] = repl_img
     return new_image
 
 
@@ -50,7 +50,3 @@ def get_fa_kps(img, fa):
     if kps is None:
         return None
     return kps[0]
-
-
-# def need_crop(image):
-#
